@@ -122,13 +122,21 @@ class ImportBlockModel(Operator, ImportHelper):
         
         # Make scene
         
-        # grid
+        ## grid
         for area in bpy.context.screen.areas :
-            if area.type == 'VIEW_3D' :
-                for space in area.spaces :
+            for space in area.spaces :
+                if space.type == 'VIEW_3D' :
                     space.grid_scale = 0.03125
                     space.grid_subdivisions = 2
                     space.grid_lines = 32
+                    
+        ## camera
+        bpy.ops.object.camera_add(location=(1.38668, -1.37849, 1.85459), rotation=(0.959931, 0, 0.785398))
+        cam = context.object
+        cam.data.type = 'ORTHO'
+        cam.data.ortho_scale = 1.96
+        cam.name = "MinecraftView"
+        bpy.types.Scene.camera = cam
         
         ## Ambiant Occlusion
         if 'ambientocclusion' in data :
