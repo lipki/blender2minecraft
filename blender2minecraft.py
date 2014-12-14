@@ -31,6 +31,8 @@ import bmesh
 import os
 import math
 import json
+import random
+
 
 
 x = 0
@@ -51,28 +53,55 @@ class ImportBlockModel(Operator, ImportHelper):
     bl_idname = "import_mc.blockmodel"  # important since its how bpy.ops.import_test.some_data is constructed
     bl_label = "Import a Minecraft Blockmodel in Scene"
 
-    def makeElement(self, data):
+    def makeElement(self, context, data, id):
         
         if 'from' in data and 'to' in data :
-        
-            size = [(data['to'][x]-data['from'][x])/2,
-                    (data['to'][y]-data['from'][y])/2,
-                    (data['to'][z]-data['from'][z])/2]
-                    
-            location = [size[x]+data['from'][x]-8,
-                        size[y]+data['from'][y],
-                        size[z]+data['from'][z]-8]
-        
-            bpy.ops.mesh.primitive_cube_add(
-                    radius=0.0625,
-                    location=(location[x]*0.0625, -location[z]*0.0625, location[y]*0.0625)
-                )
-            bpy.context.object.scale[x] = size[x]
-            bpy.context.object.scale[y] = -size[z]
-            bpy.context.object.scale[z] = size[y]
-
+            
+            name = "Elem_%i" % id
             if '__comment' in data :
-                bpy.context.object.name = data['__comment']
+                name = data['__comment']
+            
+            mat = bpy.data.materials.new(name)
+            mat.diffuse_color = random.random(), random.random(), random.random()
+                
+            fromBL = MC2BL([data['from'][x], data['from'][y], data['from'][z]])
+            toBL   = MC2BL([  data['to'][x],   data['to'][y],   data['to'][z]])
+            
+            size = [(toBL[x]-fromBL[x])/2,
+                    (toBL[y]-fromBL[y])/2,
+                    (toBL[z]-fromBL[z])/2]
+                    
+            loca = [size[x]+fromBL[x],
+                        size[y]+fromBL[y],
+                        size[z]+fromBL[z]]
+            
+            bpy.ops.mesh.primitive_cube_add( radius=1, location=(loca[x], loca[y], loca[z]))
+            
+            elem = context.object
+            elem.scale = size
+            elem.data.materials.append(mat)
+            elem.name = name
+            
+            if 'rotation' in data :
+                if 'origin' in data['rotation'] and 'axis' in data['rotation'] and  'angle' in data['rotation'] :
+                    originBL = MC2BL([data['rotation']['origin'][x],
+                                      data['rotation']['origin'][y], 
+                                      data['rotation']['origin'][z]])
+                                      
+                    context.scene.cursor_location = originBL
+                    bpy.types.SpaceView3D.pivot_point = 'CURSOR'
+                    
+                    if data['rotation']['axis'] == 'x' :
+                        axis = (1, 0, 0);
+                        rad = math.radians(data['rotation']['angle'])
+                    elif data['rotation']['axis'] == 'y' :
+                        axis = (0, 0, 1);
+                        rad = -math.radians(data['rotation']['angle'])
+                    else :
+                        axis = (0, 1, 0);
+                        rad = math.radians(data['rotation']['angle'])
+                    
+                    bpy.ops.transform.rotate(value=rad, axis=axis)
 
             return True
         else :
@@ -107,7 +136,7 @@ class ImportBlockModel(Operator, ImportHelper):
         nbMake = 0
         nbTotal = len(data['elements'])
         for element in data['elements'] :
-            if self.makeElement(element) == True :
+            if self.makeElement(context, element, nbMake) == True :
                 nbMake += 1
         
         if nbMake != nbTotal :
@@ -115,7 +144,9 @@ class ImportBlockModel(Operator, ImportHelper):
             
         return {'FINISHED'}
         
-        
+def MC2BL(mc):
+    bl = [mc[x]*0.0625-0.5, -mc[z]*0.0625+0.5, mc[y]*0.0625]
+    return bl
 
  
 ######################################################
