@@ -1,10 +1,19 @@
+######################################################
+#
+# Blender2Minecraft
+#
+###################################################S68
+# This script allows you to use Blender
+# to create 3D Block and Itemmodels for Minecraft.
+######################################################
+
 bl_info = {
     "name": "Blender2Minecraft",
     "author": "freundTech",
-    "version": (0, 1),
+    "version": (0, 2),
     "blender": (2, 6, 9),
-    "location": "File > Export > Export to Minecraft",
-    "description": "Export Scene as Minecraft Blockmodel",
+    "location": "File > Export/Import > Minecraft model (.json)",
+    "description": "Import a Minecraft model in Scene OR or Export Scene as Minecraft Blockmodel",
     "wiki_url": "https://github.com/freundTech/blender2minecraft/wiki",
     "tracker_url": "https://github.com/freundTech/blender2minecraft/issues",
     "support": "COMMUNITY",
@@ -14,18 +23,104 @@ bl_info = {
 
 import bpy
 from bpy import context
+from bpy_extras.io_utils import ExportHelper, ImportHelper
+from bpy.props import StringProperty, BoolProperty, EnumProperty, FloatProperty
+from bpy.types import Operator
+
 import bmesh
 import os
 import math
+import json
 
 
 x = 0
 y = 1
 z = 2
-nl = os.linesep
-tab = "    "
-
 toRound = 2
+data = {}
+
+
+ 
+######################################################
+# Importing modules
+######################################################
+
+
+class ImportBlockModel(Operator, ImportHelper):
+    """This appears in the tooltip of the operator and in the generated docs"""
+    bl_idname = "import_mc.blockmodel"  # important since its how bpy.ops.import_test.some_data is constructed
+    bl_label = "Import a Minecraft Blockmodel in Scene"
+
+    def makeElement(self, data):
+        
+        if 'from' in data and 'to' in data :
+        
+            size = [(data['to'][x]-data['from'][x])/2,
+                    (data['to'][y]-data['from'][y])/2,
+                    (data['to'][z]-data['from'][z])/2]
+                    
+            location = [size[x]+data['from'][x]-8,
+                        size[y]+data['from'][y],
+                        size[z]+data['from'][z]-8]
+        
+            bpy.ops.mesh.primitive_cube_add(
+                    radius=0.0625,
+                    location=(location[x]*0.0625, -location[z]*0.0625, location[y]*0.0625)
+                )
+            bpy.context.object.scale[x] = size[x]
+            bpy.context.object.scale[y] = -size[z]
+            bpy.context.object.scale[z] = size[y]
+
+            if '__comment' in data :
+                bpy.context.object.name = data['__comment']
+
+            return True
+        else :
+            return False
+    
+    def execute(self, context):
+        
+        # import file
+        readfile = open(self.filepath,'r', encoding='utf-8')
+        data = json.load(readfile)
+        readfile.close()
+        
+        # Make scene
+        
+        ## Ambiant Occlusion
+        if 'ambientocclusion' in data :
+            print("ambientocclusion - ")
+            print(data['ambientocclusion'])
+        else :
+            data['ambientocclusion'] = True
+            print("ambientocclusion force - ")
+            print(data['ambientocclusion'])
+
+        bpy.context.scene.world.light_settings.use_ambient_occlusion = data['ambientocclusion']
+
+        ## import element
+        if 'elements' in data :
+            print ("")
+        else :
+            data['elements'] = []
+        
+        nbMake = 0
+        nbTotal = len(data['elements'])
+        for element in data['elements'] :
+            if self.makeElement(element) == True :
+                nbMake += 1
+        
+        if nbMake != nbTotal :
+            print( nbMake + " elements make on " + nbTotal )
+            
+        return {'FINISHED'}
+        
+        
+
+ 
+######################################################
+# Exporting modules
+######################################################
 
 
 def getMaxMin(values, use):
@@ -104,6 +199,10 @@ class attrdict(dict):
 def write_to_file(context, filepath, include_textures, ambientocclusion, firsttrans, firstscale, firstrot, thirdtrans, thirdscale, thirdrot, invtrans, invscale, invrot):
     textures = []
     particle = ""
+    
+    nl = os.linesep
+    tab = "    "
+
     scene = context.scene
     objects = scene.objects
     file = open(filepath,'w', encoding='utf-8')
@@ -393,12 +492,14 @@ def write_to_file(context, filepath, include_textures, ambientocclusion, firsttr
     if include_textures:
         file.write(tab + "\"textures\": {" + nl)
     
-        
+        til = []
         for texture in textures:
-            file.write(tab + tab + "\"" + texture[0] + "\": " + "\"" + texture[1] + "\"," + nl)
+            til.append(tab + tab + "\"" + texture[0] + "\": " + "\"" + texture[1] + "\"" + nl)
     
         if particle != "":
-            file.write(tab + tab + "\"particle\": \"" + particle + "\"" + nl)
+            til.append(tab + tab + "\"particle\": \"" + particle + "\"" + nl)
+        
+        file.write(', '.join(til))
     
         file.write(tab + "}," + nl)
     
@@ -429,14 +530,6 @@ def write_to_file(context, filepath, include_textures, ambientocclusion, firsttr
             
 
     return {'FINISHED'}
-
-
-# ExportHelper is a helper class, defines filename and
-# invoke() function which calls the file selector.
-from bpy_extras.io_utils import ExportHelper
-from bpy.props import StringProperty, BoolProperty, EnumProperty, FloatProperty
-from bpy.types import Operator
-
 
 class ExportBlockModel(Operator, ExportHelper):
     """This appears in the tooltip of the operator and in the generated docs"""
@@ -722,22 +815,31 @@ class ExportBlockModel(Operator, ExportHelper):
 
 
 # Only needed if you want to add into a dynamic menu
+def menu_func_import(self, context):
+    self.layout.operator(ImportBlockModel.bl_idname, text="Minecraft model (.json)")
+    
 def menu_func_export(self, context):
     self.layout.operator(ExportBlockModel.bl_idname, text="Minecraft model (.json)")
 
 
 def register():
+    bpy.utils.register_class(ImportBlockModel)
+    bpy.types.INFO_MT_file_import.append(menu_func_import)
+    
     bpy.utils.register_class(ExportBlockModel)
     bpy.types.INFO_MT_file_export.append(menu_func_export)
 
 
 def unregister():
+    bpy.utils.unregister_class(ImportBlockModel)
+    bpy.types.INFO_MT_file_export.remove(menu_func_import)
+    
     bpy.utils.unregister_class(ExportBlockModel)
     bpy.types.INFO_MT_file_export.remove(menu_func_export)
-
 
 if __name__ == "__main__":
     register()
 
     # test call
-    bpy.ops.export_mc.blockmodel('INVOKE_DEFAULT')
+    #bpy.ops.export_mc.blockmodel('INVOKE_DEFAULT')
+    bpy.ops.import_mc.blockmodel('INVOKE_DEFAULT')
