@@ -57,6 +57,8 @@ class ImportBlockModel(Operator, ImportHelper):
         
         if 'from' in data and 'to' in data :
             
+            # cube
+            
             name = "Elem_%i" % id
             if '__comment' in data :
                 name = data['__comment']
@@ -82,6 +84,8 @@ class ImportBlockModel(Operator, ImportHelper):
             elem.data.materials.append(mat)
             elem.name = name
             
+            # rotation
+            
             if 'rotation' in data :
                 if 'origin' in data['rotation'] and 'axis' in data['rotation'] and  'angle' in data['rotation'] :
                     originBL = MC2BL([data['rotation']['origin'][x],
@@ -102,7 +106,9 @@ class ImportBlockModel(Operator, ImportHelper):
                         rad = math.radians(data['rotation']['angle'])
                     
                     bpy.ops.transform.rotate(value=rad, axis=axis)
-
+            
+            # 
+            
             return True
         else :
             return False
@@ -115,6 +121,14 @@ class ImportBlockModel(Operator, ImportHelper):
         readfile.close()
         
         # Make scene
+        
+        # grid
+        for area in bpy.context.screen.areas :
+            if area.type == 'VIEW_3D' :
+                for space in area.spaces :
+                    space.grid_scale = 0.03125
+                    space.grid_subdivisions = 2
+                    space.grid_lines = 32
         
         ## Ambiant Occlusion
         if 'ambientocclusion' in data :
