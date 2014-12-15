@@ -64,6 +64,8 @@ class ImportBlockModel(Operator, ImportHelper):
             
             uvBL = uvMC2BL(data['uv'])
             uvref = [[2,1],[0,1],[0,3],[2,3]]
+            if id == 4 : uvref = [[0,1],[0,3],[2,3],[2,1]] #down 4
+            if id == 5 : uvref = [[2,3],[2,1],[0,1],[0,3]] #up 5
             
             index = -1
             for loop_index in range(poly.loop_start, poly.loop_start + poly.loop_total) : 
@@ -100,6 +102,8 @@ class ImportBlockModel(Operator, ImportHelper):
                         size[z]+fromBL[z]]
             
             bpy.ops.mesh.primitive_cube_add( radius=1, location=(loca[x], loca[y], loca[z]))
+            #bpy.ops.transform.rotate(value=1.5708, axis=(0, 0, 1))
+
             bpy.ops.object.mode_set(mode='EDIT')
             bpy.ops.uv.unwrap(method='ANGLE_BASED', margin=0.001)
             bpy.ops.object.mode_set(mode='OBJECT')
