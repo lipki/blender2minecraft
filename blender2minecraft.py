@@ -53,6 +53,28 @@ class ImportBlockModel(Operator, ImportHelper):
     bl_idname = "import_mc.blockmodel"  # important since its how bpy.ops.import_test.some_data is constructed
     bl_label = "Import a Minecraft Blockmodel in Scene"
 
+    def makeFace(self, context, elem, data, id):
+        
+        if 'uv' in data and 'texture' in data :
+            
+            print("face " + str(id))
+            
+            uv_layer = elem.data.uv_layers.active.data
+            poly = elem.data.polygons[id]
+            
+            uvBL = uvMC2BL(data['uv'])
+            uvref = [[2,1],[0,1],[0,3],[2,3]]
+            
+            index = -1
+            for loop_index in range(poly.loop_start, poly.loop_start + poly.loop_total) : 
+                index += 1
+                uv_layer[loop_index].uv[0] = uvBL[ uvref[index][0] ]
+                uv_layer[loop_index].uv[1] = uvBL[ uvref[index][1] ]
+
+            return True
+        else :
+            return False
+        
     def makeElement(self, context, data, id):
         
         if 'from' in data and 'to' in data :
@@ -66,8 +88,8 @@ class ImportBlockModel(Operator, ImportHelper):
             mat = bpy.data.materials.new(name)
             mat.diffuse_color = random.random(), random.random(), random.random()
                 
-            fromBL = MC2BL([data['from'][x], data['from'][y], data['from'][z]])
-            toBL   = MC2BL([  data['to'][x],   data['to'][y],   data['to'][z]])
+            fromBL = MC2BL(data['from'])
+            toBL   = MC2BL(data['to'])
             
             size = [(toBL[x]-fromBL[x])/2,
                     (toBL[y]-fromBL[y])/2,
@@ -78,6 +100,9 @@ class ImportBlockModel(Operator, ImportHelper):
                         size[z]+fromBL[z]]
             
             bpy.ops.mesh.primitive_cube_add( radius=1, location=(loca[x], loca[y], loca[z]))
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.uv.unwrap(method='ANGLE_BASED', margin=0.001)
+            bpy.ops.object.mode_set(mode='OBJECT')
             
             elem = context.object
             elem.scale = size
@@ -88,10 +113,7 @@ class ImportBlockModel(Operator, ImportHelper):
             
             if 'rotation' in data :
                 if 'origin' in data['rotation'] and 'axis' in data['rotation'] and  'angle' in data['rotation'] :
-                    originBL = MC2BL([data['rotation']['origin'][x],
-                                      data['rotation']['origin'][y], 
-                                      data['rotation']['origin'][z]])
-                                      
+                    originBL = MC2BL(data['rotation']['origin'])
                     context.scene.cursor_location = originBL
                     bpy.types.SpaceView3D.pivot_point = 'CURSOR'
                     
@@ -107,7 +129,19 @@ class ImportBlockModel(Operator, ImportHelper):
                     
                     bpy.ops.transform.rotate(value=rad, axis=axis)
             
-            # 
+            # faces
+            if 'faces' in data : void = 0
+            else : data['faces'] = []
+            
+            faceRef = {"down":4, "up":5, "north":3, "south":1, "west":0, "east":2}
+        
+            nbMake = 0
+            nbTotal = len(data['faces'])
+            for face in data['faces'] :
+                if self.makeFace(context, elem, data['faces'][face], faceRef[face]) == True :
+                    nbMake += 1
+        
+            print( str(nbMake) + " faces make on " + str(nbTotal) )
             
             return True
         else :
@@ -121,6 +155,8 @@ class ImportBlockModel(Operator, ImportHelper):
         readfile.close()
         
         # Make scene
+        if bpy.context.scene.objects.active :
+            bpy.ops.object.mode_set(mode='OBJECT')
         
         ## grid
         for area in bpy.context.screen.areas :
@@ -140,20 +176,16 @@ class ImportBlockModel(Operator, ImportHelper):
         
         ## Ambiant Occlusion
         if 'ambientocclusion' in data :
-            print("ambientocclusion - ")
-            print(data['ambientocclusion'])
+            print("ambientocclusion - " + str(data['ambientocclusion']))
         else :
             data['ambientocclusion'] = True
-            print("ambientocclusion force - ")
-            print(data['ambientocclusion'])
+            print("ambientocclusion force - " + str(data['ambientocclusion']))
 
         bpy.context.scene.world.light_settings.use_ambient_occlusion = data['ambientocclusion']
 
         ## import element
-        if 'elements' in data :
-            print ("")
-        else :
-            data['elements'] = []
+        if 'elements' in data : void = 0
+        else : data['elements'] = []
         
         nbMake = 0
         nbTotal = len(data['elements'])
@@ -161,13 +193,16 @@ class ImportBlockModel(Operator, ImportHelper):
             if self.makeElement(context, element, nbMake) == True :
                 nbMake += 1
         
-        if nbMake != nbTotal :
-            print( nbMake + " elements make on " + nbTotal )
+        print( str(nbMake) + " elements make on " + str(nbTotal) )
             
         return {'FINISHED'}
         
 def MC2BL(mc):
     bl = [mc[x]*0.0625-0.5, -mc[z]*0.0625+0.5, mc[y]*0.0625]
+    return bl
+
+def uvMC2BL(mc):
+    bl = [mc[0]*0.0625, (16-mc[1])*0.0625, mc[2]*0.0625, (16-mc[3])*0.0625]
     return bl
 
  
@@ -447,16 +482,19 @@ def write_to_file(context, filepath, include_textures, ambientocclusion, firsttr
                                 print(max)
                                 raise Exception("Your UV is messed up")
 
+                            print("----")
+                            print(uvs)
                             print(rot)
                             print(mirror)
                             
                             try:
                                 image = data.uv_textures.active.data[face.index].image
+                                truc = image.name
                             except AttributeError:
                                 image = attrdict(name=["texture"], filepath="")
                             
                             name = [""]
-                            for c in image.name:
+                            for c in image.name :
                                 if c != '.':
                                     name[len(name)-1] += c
                                 else:
