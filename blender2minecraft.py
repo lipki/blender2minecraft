@@ -32,7 +32,7 @@ import os
 import math
 import json
 import random
-
+import collections
 
 
 x = 0
@@ -40,6 +40,7 @@ y = 1
 z = 2
 toRound = 2
 data = {}
+dataMat = {}
 
 
  
@@ -63,15 +64,30 @@ class ImportBlockModel(Operator, ImportHelper):
             poly = elem.data.polygons[id]
             
             uvBL = uvMC2BL(data['uv'])
-            uvref = [[2,1],[0,1],[0,3],[2,3]]
-            if id == 4 : uvref = [[0,1],[0,3],[2,3],[2,1]] #down 4
-            if id == 5 : uvref = [[2,3],[2,1],[0,1],[0,3]] #up 5
+            uvref = collections.deque([[2,1],[0,1],[0,3],[2,3]])
+            if id == 4 : uvref.rotate(-1) #down 4
+            if id == 5 : uvref.rotate(1)  #up 5
+            
+            if 'rotation' in data :
+                uvref.rotate(int(-data['rotation']/90))
             
             index = -1
             for loop_index in range(poly.loop_start, poly.loop_start + poly.loop_total) : 
                 index += 1
                 uv_layer[loop_index].uv[0] = uvBL[ uvref[index][0] ]
                 uv_layer[loop_index].uv[1] = uvBL[ uvref[index][1] ]
+            
+            # Assign materials to faces
+            if dataMat[data['texture']].name in elem.data.materials : void = 0
+            else : elem.data.materials.append(dataMat[data['texture']])
+            
+            index = -1
+            for slot in elem.material_slots :
+                index += 1
+                if slot.material == dataMat[data['texture']] :
+                    break
+            
+            poly.material_index = index
 
             return True
         else :
@@ -87,8 +103,8 @@ class ImportBlockModel(Operator, ImportHelper):
             if '__comment' in data :
                 name = data['__comment']
             
-            mat = bpy.data.materials.new(name)
-            mat.diffuse_color = random.random(), random.random(), random.random()
+            #mat = bpy.data.materials.new(name)
+            #mat.diffuse_color = random.random(), random.random(), random.random()
                 
             fromBL = MC2BL(data['from'])
             toBL   = MC2BL(data['to'])
@@ -98,11 +114,10 @@ class ImportBlockModel(Operator, ImportHelper):
                     (toBL[z]-fromBL[z])/2]
                     
             loca = [size[x]+fromBL[x],
-                        size[y]+fromBL[y],
-                        size[z]+fromBL[z]]
+                    size[y]+fromBL[y],
+                    size[z]+fromBL[z]]
             
             bpy.ops.mesh.primitive_cube_add( radius=1, location=(loca[x], loca[y], loca[z]))
-            #bpy.ops.transform.rotate(value=1.5708, axis=(0, 0, 1))
 
             bpy.ops.object.mode_set(mode='EDIT')
             bpy.ops.uv.unwrap(method='ANGLE_BASED', margin=0.001)
@@ -110,7 +125,7 @@ class ImportBlockModel(Operator, ImportHelper):
             
             elem = context.object
             elem.scale = size
-            elem.data.materials.append(mat)
+            #elem.data.materials.append(mat)
             elem.name = name
             
             # rotation
@@ -151,6 +166,53 @@ class ImportBlockModel(Operator, ImportHelper):
         else :
             return False
     
+    def loadTextures(self, context, data, id) :
+            
+        spl = data.split('/')
+        name = spl[len(spl)-1]
+        
+        if name + '.png' in bpy.data.images :
+            img = bpy.data.images[name + '.png']
+        else :
+            # Load image file. Change here if the snippet folder is 
+            realpath  = self.filepath.split('/minecraft/')[0]
+            realpath += '/minecraft/textures/'
+            realpath += data + '.png'
+            print(realpath)
+                
+            try:
+                img = bpy.data.images.load(realpath)
+            except:
+                raise NameError("Cannot load image %s" % realpath)
+                return False
+                
+        # Create image texture from image
+        if name in bpy.data.textures :
+            cTex = bpy.data.textures[name]
+        else :
+            cTex = bpy.data.textures.new(name, type = 'IMAGE')
+            cTex.image = img
+            
+        # Create material
+        if name in bpy.data.materials :
+            dataMat['#'+id] = bpy.data.materials[name]
+        else :
+            dataMat['#'+id] = bpy.data.materials.new(name)
+            dataMat['#'+id].use_transparency = True
+            dataMat['#'+id].alpha = 0
+            dataMat['#'+id].preview_render_type = 'CUBE'
+            
+            # Add texture slot for color texture
+            mtex = dataMat['#'+id].texture_slots.add()
+            mtex.texture = cTex
+            mtex.texture_coords = 'UV'
+            mtex.use_map_alpha = True
+
+            cTex.use_interpolation = False
+            cTex.filter_type = 'BOX'
+        
+        return True
+    
     def execute(self, context):
         
         # import file
@@ -161,6 +223,16 @@ class ImportBlockModel(Operator, ImportHelper):
         # Make scene
         if bpy.context.scene.objects.active :
             bpy.ops.object.mode_set(mode='OBJECT')
+                    
+        ## camera
+        bpy.ops.object.camera_add(location=(1.38668, -1.37849, 1.85459), rotation=(0.959931, 0, 0.785398))
+        cam = context.object
+        cam.data.type = 'ORTHO'
+        cam.data.ortho_scale = 1.96
+        cam.name = "MinecraftView"
+        
+        bpy.context.scene.render.resolution_x = 1000
+        bpy.context.scene.render.resolution_y = 1000
         
         ## grid
         for area in bpy.context.screen.areas :
@@ -169,14 +241,8 @@ class ImportBlockModel(Operator, ImportHelper):
                     space.grid_scale = 0.03125
                     space.grid_subdivisions = 2
                     space.grid_lines = 32
-                    
-        ## camera
-        bpy.ops.object.camera_add(location=(1.38668, -1.37849, 1.85459), rotation=(0.959931, 0, 0.785398))
-        cam = context.object
-        cam.data.type = 'ORTHO'
-        cam.data.ortho_scale = 1.96
-        cam.name = "MinecraftView"
-        bpy.types.Scene.camera = cam
+                    #space.object_as_camera()
+
         
         ## Ambiant Occlusion
         if 'ambientocclusion' in data :
@@ -185,8 +251,15 @@ class ImportBlockModel(Operator, ImportHelper):
             data['ambientocclusion'] = True
             print("ambientocclusion force - " + str(data['ambientocclusion']))
 
-        bpy.context.scene.world.light_settings.use_ambient_occlusion = data['ambientocclusion']
-
+        context.scene.world.light_settings.use_ambient_occlusion = data['ambientocclusion']
+        
+        ## texture
+        if 'textures' in data : void = 0
+        else : data['textures'] = []
+        
+        for texture in data['textures'] :
+            self.loadTextures(context, data['textures'][texture], texture)
+        
         ## import element
         if 'elements' in data : void = 0
         else : data['elements'] = []
