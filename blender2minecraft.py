@@ -53,45 +53,67 @@ class ImportBlockModel(Operator, ImportHelper):
     """This appears in the tooltip of the operator and in the generated docs"""
     bl_idname = "import_mc.blockmodel"  # important since its how bpy.ops.import_test.some_data is constructed
     bl_label = "Import a Minecraft Blockmodel in Scene"
-
-    def makeFace(self, context, elem, data, id):
+    
+    def execute(self, context):
         
-        if 'uv' in data and 'texture' in data :
-            
-            print("face " + str(id))
-            
-            uv_layer = elem.data.uv_layers.active.data
-            poly = elem.data.polygons[id]
-            
-            uvBL = uvMC2BL(data['uv'])
-            uvref = collections.deque([[2,1],[0,1],[0,3],[2,3]])
-            if id == 4 : uvref.rotate(-1) #down 4
-            if id == 5 : uvref.rotate(1)  #up 5
-            
-            if 'rotation' in data :
-                uvref.rotate(int(-data['rotation']/90))
-            
-            index = -1
-            for loop_index in range(poly.loop_start, poly.loop_start + poly.loop_total) : 
-                index += 1
-                uv_layer[loop_index].uv[0] = uvBL[ uvref[index][0] ]
-                uv_layer[loop_index].uv[1] = uvBL[ uvref[index][1] ]
-            
-            # Assign materials to faces
-            if dataMat[data['texture']].name in elem.data.materials : void = 0
-            else : elem.data.materials.append(dataMat[data['texture']])
-            
-            index = -1
-            for slot in elem.material_slots :
-                index += 1
-                if slot.material == dataMat[data['texture']] :
-                    break
-            
-            poly.material_index = index
+        # import file
+        readfile = open(self.filepath,'r', encoding='utf-8')
+        data = json.load(readfile)
+        readfile.close()
+        
+        # Make scene
+        if bpy.context.scene.objects.active :
+            bpy.ops.object.mode_set(mode='OBJECT')
+                    
+        ## camera
+        bpy.ops.object.camera_add(location=(1.38668, -1.37849, 1.85459), rotation=(0.959931, 0, 0.785398))
+        cam = context.object
+        cam.data.type = 'ORTHO'
+        cam.data.ortho_scale = 1.96
+        cam.name = "MinecraftView"
+        
+        bpy.context.scene.render.resolution_x = 1000
+        bpy.context.scene.render.resolution_y = 1000
+        
+        ## grid
+        for area in bpy.context.screen.areas :
+            for space in area.spaces :
+                if space.type == 'VIEW_3D' :
+                    space.grid_scale = 0.03125
+                    space.grid_subdivisions = 2
+                    space.grid_lines = 32
+                    #space.object_as_camera()
 
-            return True
+        
+        ## Ambiant Occlusion
+        if 'ambientocclusion' in data :
+            print("ambientocclusion - " + str(data['ambientocclusion']))
         else :
-            return False
+            data['ambientocclusion'] = True
+            print("ambientocclusion force - " + str(data['ambientocclusion']))
+
+        context.scene.world.light_settings.use_ambient_occlusion = data['ambientocclusion']
+        
+        ## texture
+        if 'textures' in data : void = 0
+        else : data['textures'] = []
+        
+        for texture in data['textures'] :
+            self.loadTextures(context, data['textures'][texture], texture)
+        
+        ## import element
+        if 'elements' in data : void = 0
+        else : data['elements'] = []
+        
+        nbMake = 0
+        nbTotal = len(data['elements'])
+        for element in data['elements'] :
+            if self.makeElement(context, element, nbMake) == True :
+                nbMake += 1
+        
+        print( str(nbMake) + " elements make on " + str(nbTotal) )
+            
+        return {'FINISHED'}
         
     def makeElement(self, context, data, id):
         
@@ -165,43 +187,86 @@ class ImportBlockModel(Operator, ImportHelper):
             return True
         else :
             return False
+
+    def makeFace(self, context, elem, data, id):
+        
+        if 'uv' in data and 'texture' in data :
+            
+            uv_layer = elem.data.uv_layers.active.data
+            poly = elem.data.polygons[id]
+            
+            uvBL = uvMC2BL(data['uv'])
+            uvref = collections.deque([[2,1],[0,1],[0,3],[2,3]])
+            if id == 4 : uvref.rotate(-1) #down 4
+            if id == 5 : uvref.rotate(1)  #up 5
+            
+            if 'rotation' in data :
+                uvref.rotate(int(-data['rotation']/90))
+            
+            index = -1
+            for loop_index in range(poly.loop_start, poly.loop_start + poly.loop_total) : 
+                index += 1
+                uv_layer[loop_index].uv[0] = uvBL[ uvref[index][0] ]
+                uv_layer[loop_index].uv[1] = uvBL[ uvref[index][1] ]
+            
+            # Assign materials to faces
+            if dataMat[data['texture']].name in elem.data.materials : void = 0
+            else : elem.data.materials.append(dataMat[data['texture']])
+            
+            index = -1
+            for slot in elem.material_slots :
+                index += 1
+                if slot.material == dataMat[data['texture']] :
+                    break
+            
+            poly.material_index = index
+
+            return True
+        else :
+            return False
     
     def loadTextures(self, context, data, id) :
-            
+        
         spl = data.split('/')
         name = spl[len(spl)-1]
         
-        if name + '.png' in bpy.data.images :
-            img = bpy.data.images[name + '.png']
-        else :
-            # Load image file. Change here if the snippet folder is 
-            realpath  = self.filepath.split('/minecraft/')[0]
-            realpath += '/minecraft/textures/'
-            realpath += data + '.png'
-            print(realpath)
-                
-            try:
-                img = bpy.data.images.load(realpath)
-            except:
-                raise NameError("Cannot load image %s" % realpath)
-                return False
-                
-        # Create image texture from image
-        if name in bpy.data.textures :
-            cTex = bpy.data.textures[name]
-        else :
-            cTex = bpy.data.textures.new(name, type = 'IMAGE')
-            cTex.image = img
-            
-        # Create material
+        # if material existe
         if name in bpy.data.materials :
             dataMat['#'+id] = bpy.data.materials[name]
         else :
+            
+            # if texture existe
+            if name in bpy.data.textures :
+                cTex = bpy.data.textures[name]
+            else :
+                
+                # if image existe
+                if name + '.png' in bpy.data.images :
+                    img = bpy.data.images[name + '.png']
+                else :
+                    # Load image file. Change here if the snippet folder is 
+                    realpath  = self.filepath.split('/minecraft/')[0]
+                    realpath += '/minecraft/textures/'
+                    realpath += data + '.png'
+                    
+                    cTex = bpy.data.textures.new(name, type = 'IMAGE')
+                
+                    try:
+                        cTex.image = bpy.data.images.load(realpath)
+                    except:
+                        bpy.ops.info.message('INVOKE_DEFAULT', 
+                            title = "Loading image Error",
+                            type = "Message",
+                            message = "Cannot load image %s" % realpath)
+                        
+                        #raise NameError("Cannot load image %s" % realpath)
+            
             dataMat['#'+id] = bpy.data.materials.new(name)
             dataMat['#'+id].use_transparency = True
             dataMat['#'+id].alpha = 0
             dataMat['#'+id].preview_render_type = 'CUBE'
-            
+            dataMat['#'+id].use_raytrace = False
+
             # Add texture slot for color texture
             mtex = dataMat['#'+id].texture_slots.add()
             mtex.texture = cTex
@@ -212,67 +277,6 @@ class ImportBlockModel(Operator, ImportHelper):
             cTex.filter_type = 'BOX'
         
         return True
-    
-    def execute(self, context):
-        
-        # import file
-        readfile = open(self.filepath,'r', encoding='utf-8')
-        data = json.load(readfile)
-        readfile.close()
-        
-        # Make scene
-        if bpy.context.scene.objects.active :
-            bpy.ops.object.mode_set(mode='OBJECT')
-                    
-        ## camera
-        bpy.ops.object.camera_add(location=(1.38668, -1.37849, 1.85459), rotation=(0.959931, 0, 0.785398))
-        cam = context.object
-        cam.data.type = 'ORTHO'
-        cam.data.ortho_scale = 1.96
-        cam.name = "MinecraftView"
-        
-        bpy.context.scene.render.resolution_x = 1000
-        bpy.context.scene.render.resolution_y = 1000
-        
-        ## grid
-        for area in bpy.context.screen.areas :
-            for space in area.spaces :
-                if space.type == 'VIEW_3D' :
-                    space.grid_scale = 0.03125
-                    space.grid_subdivisions = 2
-                    space.grid_lines = 32
-                    #space.object_as_camera()
-
-        
-        ## Ambiant Occlusion
-        if 'ambientocclusion' in data :
-            print("ambientocclusion - " + str(data['ambientocclusion']))
-        else :
-            data['ambientocclusion'] = True
-            print("ambientocclusion force - " + str(data['ambientocclusion']))
-
-        context.scene.world.light_settings.use_ambient_occlusion = data['ambientocclusion']
-        
-        ## texture
-        if 'textures' in data : void = 0
-        else : data['textures'] = []
-        
-        for texture in data['textures'] :
-            self.loadTextures(context, data['textures'][texture], texture)
-        
-        ## import element
-        if 'elements' in data : void = 0
-        else : data['elements'] = []
-        
-        nbMake = 0
-        nbTotal = len(data['elements'])
-        for element in data['elements'] :
-            if self.makeElement(context, element, nbMake) == True :
-                nbMake += 1
-        
-        print( str(nbMake) + " elements make on " + str(nbTotal) )
-            
-        return {'FINISHED'}
         
 def MC2BL(mc):
     bl = [mc[x]*0.0625-0.5, -mc[z]*0.0625+0.5, mc[y]*0.0625]
@@ -982,6 +986,41 @@ class ExportBlockModel(Operator, ExportHelper):
                 [self.invrotx, self.invroty, self.invrotz])
 
 
+######################################################
+# Message
+######################################################
+
+
+class MessageOperator(bpy.types.Operator):
+    bl_idname = "info.message"
+    bl_label = "Message"
+    title = StringProperty()
+    type = StringProperty()
+    message = StringProperty()
+ 
+    def execute(self, context):
+        self.report({'INFO'}, self.message)
+        print(self.message)
+        return {'FINISHED'}
+ 
+    def invoke(self, context, event):
+        wm = context.window_manager
+        return wm.invoke_popup(self, width=400, height=200)
+ 
+    def draw(self, context):
+        self.layout.label(self.title)
+        
+        if self.type != "Message" :
+            self.layout.label(self.type)
+            
+        self.layout.label(self.message)
+
+
+######################################################
+# Register
+######################################################
+
+
 # Only needed if you want to add into a dynamic menu
 def menu_func_import(self, context):
     self.layout.operator(ImportBlockModel.bl_idname, text="Minecraft model (.json)")
@@ -991,6 +1030,8 @@ def menu_func_export(self, context):
 
 
 def register():
+    bpy.utils.register_class(MessageOperator)
+    
     bpy.utils.register_class(ImportBlockModel)
     bpy.types.INFO_MT_file_import.append(menu_func_import)
     
@@ -999,6 +1040,8 @@ def register():
 
 
 def unregister():
+    bpy.utils.unregister_class(MessageOperator)
+    
     bpy.utils.unregister_class(ImportBlockModel)
     bpy.types.INFO_MT_file_export.remove(menu_func_import)
     
