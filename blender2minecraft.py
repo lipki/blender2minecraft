@@ -62,18 +62,31 @@ class ImportBlockModel(Operator, ImportHelper):
         readfile.close()
         
         # Make scene
-        if bpy.context.scene.objects.active :
+        scene = bpy.data.scenes["Scene"]
+        scene.render.resolution_x = 1000
+        scene.render.resolution_y = 1000
+        if scene.objects.active :
             bpy.ops.object.mode_set(mode='OBJECT')
-                    
+            
+        ## Light
+        bpy.ops.object.lamp_add(type='SUN', view_align=False, location=(-0.0402176, 1.2157, 1.36071), layers=(True, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False))
+        light = context.object
+        light.data.shadow_method = 'NOSHADOW'
+        light.data.energy = 1.5
+        light.location[0] = 4
+        light.location[1] = -4
+        light.location[2] = 12
+        light.rotation_euler[0] = 0.035
+        light.rotation_euler[1] = 0.192
+        light.rotation_euler[2] = -0.838
+
         ## camera
-        bpy.ops.object.camera_add(location=(1.38668, -1.37849, 1.85459), rotation=(0.959931, 0, 0.785398))
+        bpy.ops.object.camera_add(location=(1.38, -1.38, 1.86), rotation=(0.959931, 0, 0.785398))
         cam = context.object
         cam.data.type = 'ORTHO'
         cam.data.ortho_scale = 1.96
         cam.name = "MinecraftView"
-        
-        bpy.context.scene.render.resolution_x = 1000
-        bpy.context.scene.render.resolution_y = 1000
+        scene.camera = cam
         
         ## grid
         for area in bpy.context.screen.areas :
@@ -82,9 +95,7 @@ class ImportBlockModel(Operator, ImportHelper):
                     space.grid_scale = 0.03125
                     space.grid_subdivisions = 2
                     space.grid_lines = 32
-                    #space.object_as_camera()
 
-        
         ## Ambiant Occlusion
         if 'ambientocclusion' in data :
             print("ambientocclusion - " + str(data['ambientocclusion']))
@@ -92,7 +103,7 @@ class ImportBlockModel(Operator, ImportHelper):
             data['ambientocclusion'] = True
             print("ambientocclusion force - " + str(data['ambientocclusion']))
 
-        context.scene.world.light_settings.use_ambient_occlusion = data['ambientocclusion']
+        scene.world.light_settings.use_ambient_occlusion = data['ambientocclusion']
         
         ## texture
         if 'textures' in data : void = 0
@@ -120,7 +131,7 @@ class ImportBlockModel(Operator, ImportHelper):
         if 'from' in data and 'to' in data :
             
             # cube
-            
+            print("cube" + str(id))
             name = "Elem_%i" % id
             if '__comment' in data :
                 name = data['__comment']
@@ -175,12 +186,27 @@ class ImportBlockModel(Operator, ImportHelper):
             else : data['faces'] = []
             
             faceRef = {"down":4, "up":5, "north":3, "south":1, "west":0, "east":2}
-        
+            
+            bpy.ops.object.mode_set(mode="EDIT")
+            bpy.ops.mesh.select_mode(type="FACE")
+            bpy.ops.mesh.select_all(action='TOGGLE')
+            bpy.ops.object.mode_set(mode='OBJECT')
+            
             nbMake = 0
             nbTotal = len(data['faces'])
-            for face in data['faces'] :
-                if self.makeFace(context, elem, data['faces'][face], faceRef[face]) == True :
-                    nbMake += 1
+            for face in faceRef :
+                print(face)
+                if face in data['faces'] :
+                    if self.makeFace(context, elem, data['faces'][face], faceRef[face]) == True :
+                        nbMake += 1
+                else :
+                    poly = elem.data.polygons[faceRef[face]]
+                    poly.select = True   # won't show in viewport  
+            
+            bpy.ops.object.mode_set(mode="EDIT")
+            bpy.ops.mesh.delete(type='FACE') # will be acted on. 
+            bpy.ops.object.mode_set(mode='OBJECT')
+                    
         
             print( str(nbMake) + " faces make on " + str(nbTotal) )
             
@@ -219,7 +245,7 @@ class ImportBlockModel(Operator, ImportHelper):
                 if slot.material == dataMat[data['texture']] :
                     break
             
-            poly.material_index = index
+            poly.material_index = index 
 
             return True
         else :
